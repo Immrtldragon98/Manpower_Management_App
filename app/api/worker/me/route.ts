@@ -1,0 +1,3 @@
+import { env } from "cloudflare:workers";import { cookieValue,verifyWorkerToken } from "@/lib/security";
+export async function GET(request:Request){const secret=(env as unknown as {SESSION_SECRET?:string}).SESSION_SECRET||"";const id=await verifyWorkerToken(cookieValue(request,"mp_session"),secret);if(!id)return Response.json({error:"Not signed in."},{status:401});const worker=await env.DB.prepare("SELECT id,name,employee_id AS employeeId,contractor,trade,shift FROM manpower WHERE id=? AND active=1").bind(id).first();return worker?Response.json({worker}):Response.json({error:"Worker not found."},{status:404})}
+export async function DELETE(){return Response.json({ok:true},{headers:{"set-cookie":"mp_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"}})}
