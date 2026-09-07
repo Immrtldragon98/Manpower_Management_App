@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Manpower Control",
+  title: "Workforce Hub",
   description: "Contractor manpower attendance, skills, gate passes and work allocation.",
   manifest: "/manifest.webmanifest",
   other: {
