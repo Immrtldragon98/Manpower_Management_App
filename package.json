@@ -13,9 +13,13 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    ,"android:sync": "cap sync android"
+    ,"android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
     "@hookform/resolvers": "^5.7.1",
     "@shadcn/react": "^0.3.0",
     "class-variance-authority": "0.7.1",
@@ -43,6 +47,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@cloudflare/vite-plugin": "1.37.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
