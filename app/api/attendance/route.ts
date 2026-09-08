@@ -37,13 +37,21 @@ export async function GET(request: Request) {
       "SELECT id, attendance_date::text AS \"attendanceDate\", status, request_type AS \"requestType\", shift_code AS shift, reason FROM attendance WHERE manpower_id=$1 AND attendance_date >= (CURRENT_DATE - INTERVAL '1 month')::date AND attendance_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '2 months - 1 day')::date ORDER BY attendance_date",
       [workerId],
     );
-    return Response.json({ records: data.rows });
+    const leaves = await query(
+      `SELECT a.id,a.attendance_date::text AS "attendanceDate",a.shift_code AS shift,m.name,m.employee_id AS "employeeId"
+       FROM attendance a JOIN manpower m ON m.id=a.manpower_id
+       WHERE a.request_type='Leave' AND a.status='Approved'
+       AND a.attendance_date >= date_trunc('month', CURRENT_DATE)::date
+       AND a.attendance_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '2 months - 1 day')::date
+       ORDER BY a.attendance_date,m.name`,
+    );
+    return Response.json({ records: data.rows, colleagueLeaves: leaves.rows });
   }
   const admin = await requireAdmin();
   if (!admin)
     return Response.json({ error: "Admin sign-in required." }, { status: 401 });
   const data = await query(
-    'SELECT a.id,a.attendance_date::text AS "attendanceDate",a.requested_at AS "requestedAt",a.status,a.request_type AS "requestType",a.shift_code AS shift,a.reason,m.name,m.employee_id AS "employeeId",m.contractor FROM attendance a JOIN manpower m ON m.id=a.manpower_id ORDER BY a.attendance_date DESC,a.requested_at DESC',
+    'SELECT a.id,a.manpower_id AS "manpowerId",a.attendance_date::text AS "attendanceDate",a.requested_at AS "requestedAt",a.status,a.request_type AS "requestType",a.shift_code AS shift,a.reason,m.name,m.employee_id AS "employeeId",m.contractor FROM attendance a JOIN manpower m ON m.id=a.manpower_id ORDER BY a.attendance_date DESC,a.requested_at DESC',
   );
   return Response.json({
     records: data.rows,

@@ -75,3 +75,11 @@ export async function POST(request: Request) {
     );
   }
 }
+export async function PATCH(request: Request) {
+  if (!(await requireAdmin())) return Response.json({ error: "Admin sign-in required." }, { status: 401 });
+  const body = (await request.json()) as { id?: number; shift?: string };
+  if (!body.id || !["A", "B", "C", "G"].includes(body.shift || ""))
+    return Response.json({ error: "Choose a valid worker and shift." }, { status: 400 });
+  await query("UPDATE manpower SET shift=$1 WHERE id=$2", [body.shift, body.id]);
+  return Response.json({ ok: true });
+}

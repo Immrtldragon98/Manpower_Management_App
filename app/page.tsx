@@ -5,6 +5,8 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
+  CalendarDays,
+  ClipboardList,
   DoorOpen,
   HardHat,
   LayoutDashboard,
@@ -21,7 +23,7 @@ import { QRCodeSVG } from "qrcode.react";
 type Tab =
   | "Dashboard"
   | "Manpower"
-  | "Attendance"
+  | "Schedule planner"
   | "Work"
   | "Gate passes"
   | "Skills";
@@ -52,7 +54,7 @@ type Job = {
 const nav: [Tab, typeof Users][] = [
   ["Dashboard", LayoutDashboard],
   ["Manpower", Users],
-  ["Attendance", CalendarCheck],
+  ["Schedule planner", CalendarCheck],
   ["Work", BriefcaseBusiness],
   ["Gate passes", DoorOpen],
   ["Skills", BadgeCheck],
@@ -281,7 +283,7 @@ export function AdminApp() {
               )}
             </section>
           )}
-          {tab === "Attendance" && <AttendanceAdmin />}
+          {tab === "Schedule planner" && <SchedulePlanner people={people} refreshPeople={load} />}
           {tab === "Gate passes" && (
             <Empty
               icon={DoorOpen}
@@ -745,7 +747,7 @@ function MiniEmpty({ text }: { text: string }) {
 function Loading() {
   return <div className="miniempty">Loading records…</div>;
 }
-function AttendanceAdmin() {
+function SchedulePlanner({people,refreshPeople}:{people:Person[];refreshPeople:()=>void}) {
   const [data, setData] = useState<{
     records: Array<{
       id: number;
@@ -758,14 +760,14 @@ function AttendanceAdmin() {
       reason?: string;
       requestedAt: string;
       status: string;
+      manpowerId: number;
     }>;
     workplaceCode: string;
   } | null>(null);
+  const [changes,setChanges]=useState<{shiftRequests:any[];workRequests:any[]}>({shiftRequests:[],workRequests:[]});
+  const [shiftFilter,setShiftFilter]=useState("All");
   const load = useCallback(
-    () =>
-      fetch("/api/attendance")
-        .then((r) => r.json())
-        .then(setData),
+    () => Promise.all([fetch("/api/attendance").then((r) => r.json()).then(setData),fetch("/api/change-requests").then(r=>r.json()).then(setChanges)]),
     [],
   );
   useEffect(() => {
@@ -779,8 +781,14 @@ function AttendanceAdmin() {
     });
     load();
   }
+  async function reviewChange(kind:string,id:number,status:string){await fetch("/api/change-requests",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({kind,id,status})});load();refreshPeople()}
+  async function setWorkerShift(id:number,shift:string){await fetch("/api/manpower",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({id,shift})});refreshPeople()}
+  const visible=data?.records.filter(r=>shiftFilter==="All"||r.shift===shiftFilter)||[];
+  const pending=(data?.records.filter(r=>r.status==="Pending").length||0)+changes.shiftRequests.filter(r=>r.status==="Pending").length+changes.workRequests.filter(r=>r.status==="Pending").length;
   return (
     <section className="panel page">
+      <div className="planner-hero"><div><small>WORKFORCE OPERATIONS</small><h2>Schedule planner</h2><p>Plan shift coverage, attendance and leave from one place.</p></div><label className="field"><span>View shift</span><select value={shiftFilter} onChange={e=>setShiftFilter(e.target.value)}>{["All","A","B","C","G"].map(s=><option key={s}>{s}</option>)}</select></label></div>
+      <div className="planner-metrics"><article><b>{people.length}</b><span>Active workers</span></article><article><b>{visible.filter(r=>r.requestType==="Attendance"&&r.status==="Approved").length}</b><span>Approved attendance</span></article><article><b>{visible.filter(r=>r.requestType==="Leave"&&r.status==="Approved").length}</b><span>Approved leave</span></article><article><b>{pending}</b><span>Pending actions</span></article></div>
       <div className="codebar">
         <div>
           <small>TODAY’S WORKPLACE QR CODE</small>
@@ -803,15 +811,12 @@ function AttendanceAdmin() {
           <QrCode />
         )}
       </div>
-      <Head
-        title="Attendance requests"
-        sub="Approve or reject submitted requests"
-      />
+      <Head title="Attendance & leave roster" sub="Shift-wise schedule and approval queue" />
       {!data ? (
         <Loading />
-      ) : data.records.length ? (
+      ) : visible.length ? (
         <div className="attendance-list">
-          {data.records.map((r) => (
+          {visible.map((r) => (
             <div className="row" key={r.id}>
               <span className="face">
                 {r.name
@@ -851,6 +856,13 @@ function AttendanceAdmin() {
       ) : (
         <MiniEmpty text="No attendance requests" />
       )}
+      <Head title="Shift assignments" sub="Change a worker’s default shift immediately" />
+      <div className="shift-roster">{people.map(p=><div key={p.id}><span className="face">{p.name.split(" ").map(x=>x[0]).join("")}</span><span><b>{p.name}</b><small>{p.employeeId} · {p.trade}</small></span><select value={p.shift} onChange={e=>setWorkerShift(p.id,e.target.value)}>{["A","B","C","G"].map(s=><option key={s}>{s}</option>)}</select></div>)}</div>
+      <Head title="Change requests" sub="Review worker shift and assignment change requests" />
+      <div className="attendance-list">
+       {[...changes.shiftRequests.map(r=>({...r,kind:"shift",summary:`Shift ${r.currentShift} → ${r.requestedShift} from ${r.effectiveDate}`})),...changes.workRequests.map(r=>({...r,kind:"work",summary:`${r.title} → ${r.requestedDate}`}))].map(r=><div className="row" key={`${r.kind}${r.id}`}><div className="grow"><b>{r.name}</b><small>{r.employeeId} · {r.summary}</small><small>{r.reason}</small></div><span className={`status ${r.status==="Approved"?"ok":r.status==="Pending"?"wait":"plain"}`}>{r.status}</span>{r.status==="Pending"&&<div className="review"><button onClick={()=>reviewChange(r.kind,r.id,"Rejected")}>Reject</button><button onClick={()=>reviewChange(r.kind,r.id,"Approved")}>Approve</button></div>}</div>)}
+       {!changes.shiftRequests.length&&!changes.workRequests.length&&<MiniEmpty text="No change requests"/>}
+      </div>
     </section>
   );
 }
@@ -863,6 +875,8 @@ type WorkerRequest = {
   shift: string;
   reason?: string;
 };
+type ColleagueLeave={id:number;attendanceDate:string;shift:string;name:string;employeeId:string};
+type ChangeData={shiftRequests:Array<any>;workRequests:Array<any>};
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const todayKey = () => dateKey(new Date());
 function calendarMonths() {
@@ -942,10 +956,19 @@ export default function WorkerHome() {
     [shift, setShift] = useState("G"),
     [reason, setReason] = useState(""),
     [records, setRecords] = useState<WorkerRequest[]>([]),
+    [colleagueLeaves,setColleagueLeaves]=useState<ColleagueLeave[]>([]),
+    [jobs,setJobs]=useState<Job[]>([]),
+    [changes,setChanges]=useState<ChangeData>({shiftRequests:[],workRequests:[]}),
+    [workerTab,setWorkerTab]=useState<"Schedule"|"My work"|"Team leave"|"Requests">("Schedule"),
+    [changeShift,setChangeShift]=useState("A"),
+    [effectiveDate,setEffectiveDate]=useState(todayKey()),
+    [changeReason,setChangeReason]=useState(""),
     [notice, setNotice] = useState("");
   const loadRequests = useCallback(async () => {
-    const r = await fetch("/api/attendance?mine=1");
-    if (r.ok) setRecords((await r.json()).records);
+    const [a,w,c]=await Promise.all([fetch("/api/attendance?mine=1"),fetch("/api/work?mine=1"),fetch("/api/change-requests")]);
+    if (a.ok){const out=await a.json();setRecords(out.records);setColleagueLeaves(out.colleagueLeaves||[])}
+    if(w.ok)setJobs(await w.json());
+    if(c.ok)setChanges(await c.json());
   }, []);
   useEffect(() => {
     fetch("/api/worker/me").then(async (r) => {
@@ -997,6 +1020,7 @@ export default function WorkerHome() {
     setReason("");
     loadRequests();
   }
+  async function submitChange(payload:object,message:string){setBusy(true);setError("");const r=await fetch("/api/change-requests",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});const out=await r.json();setBusy(false);if(!r.ok)return setError(out.error);setNotice(message);setChangeReason("");loadRequests()}
   if (!worker)
     return (
       <div className="loginpage">
@@ -1064,7 +1088,9 @@ export default function WorkerHome() {
             </p>
           </div>
         </section>
-        <section className="request-panel">
+        <nav className="worker-tabs">{(["Schedule","My work","Team leave","Requests"] as const).map(t=><button key={t} className={workerTab===t?"active":""} onClick={()=>{setWorkerTab(t);setError("");setNotice("")}}>{t}</button>)}</nav>
+        {workerTab==="Schedule"&&<section className="worker-summary"><article><b>{records.filter(r=>r.requestType==="Attendance"&&r.status==="Approved").length}</b><span>Attendance days</span></article><article><b>{records.filter(r=>r.requestType==="Leave"&&r.status==="Approved").length}</b><span>Leave days</span></article>{["A","B","C","G"].map(s=><article key={s}><b>{records.filter(r=>r.requestType==="Attendance"&&r.shift===s).length}</b><span>Shift {s}</span></article>)}</section>}
+        {workerTab==="Schedule"&&<section className="request-panel">
           <div className="request-head">
             <div>
               <small>MY SCHEDULE</small>
@@ -1189,7 +1215,10 @@ export default function WorkerHome() {
             </span>
             <span>Pending until admin approval</span>
           </div>
-        </section>
+        </section>}
+        {workerTab==="My work"&&<section className="request-panel"><div className="request-head"><div><small>ASSIGNED TO ME</small><h2>My work</h2><p>Check your area, timing and instructions. Request a date change if needed.</p></div><ClipboardList/></div><div className="worker-job-list">{jobs.map(j=><article key={j.id}><div><small>{j.scheduledDate} · {j.startTime}–{j.endTime}</small><h3>{j.title}</h3><p>{j.area}{j.instructions?` · ${j.instructions}`:""}</p><span className="status plain">{j.status}</span></div><details><summary>Request change</summary><label className="field"><span>Requested date</span><input id={`jobdate${j.id}`} type="date" min={todayKey()} defaultValue={j.scheduledDate}/></label><label className="field"><span>Reason</span><textarea id={`jobreason${j.id}`} rows={2}/></label><button className="primary" onClick={()=>{const d=(document.getElementById(`jobdate${j.id}`) as HTMLInputElement).value;const rs=(document.getElementById(`jobreason${j.id}`) as HTMLTextAreaElement).value;submitChange({kind:"work",workAssignmentId:j.id,requestedDate:d,reason:rs},"Work change request submitted.")}}>Submit request</button></details></article>)}{!jobs.length&&<MiniEmpty text="No work has been assigned yet."/>}</div></section>}
+        {workerTab==="Team leave"&&<section className="request-panel"><div className="request-head"><div><small>TEAM AVAILABILITY</small><h2>Colleagues on leave</h2><p>Approved leave dates are visible for shift planning. Private reasons stay hidden.</p></div><Users/></div><div className="leave-board">{colleagueLeaves.map(l=><article key={l.id}><CalendarDays/><div><b>{l.name}</b><small>{l.attendanceDate} · Shift {l.shift}</small></div></article>)}{!colleagueLeaves.length&&<MiniEmpty text="No approved team leave this month or next month."/>}</div></section>}
+        {workerTab==="Requests"&&<section className="request-panel"><div className="request-head"><div><small>SELF SERVICE</small><h2>Shift & work changes</h2><p>Send requests to your admin and track approval status.</p></div><CalendarCheck/></div><div className="change-form"><div className="request-fields"><label className="field"><span>Requested shift</span><select value={changeShift} onChange={e=>setChangeShift(e.target.value)}>{["A","B","C","G"].map(s=><option key={s}>{s}</option>)}</select></label><label className="field"><span>Effective date</span><input type="date" min={todayKey()} value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/></label></div><label className="field"><span>Reason</span><textarea rows={3} value={changeReason} onChange={e=>setChangeReason(e.target.value)} placeholder="Why do you need this shift change?"/></label>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}<button className="primary" disabled={busy||changeReason.trim().length<3} onClick={()=>submitChange({kind:"shift",requestedShift:changeShift,effectiveDate,reason:changeReason},"Shift change request submitted.")}>Request shift change</button></div><div className="request-history">{[...changes.shiftRequests.map(r=>({id:`s${r.id}`,title:`Shift ${r.currentShift} → ${r.requestedShift}`,date:r.effectiveDate,status:r.status})),...changes.workRequests.map(r=>({id:`w${r.id}`,title:`Work: ${r.title}`,date:r.requestedDate,status:r.status}))].map(r=><div className="row" key={r.id}><div className="grow"><b>{r.title}</b><small>{r.date}</small></div><span className={`status ${r.status==="Approved"?"ok":r.status==="Pending"?"wait":"plain"}`}>{r.status}</span></div>)}</div></section>}
       </main>
     </div>
   );

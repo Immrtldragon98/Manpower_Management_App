@@ -25,6 +25,8 @@ export function ensureSchema() {
     ALTER TABLE attendance ADD COLUMN IF NOT EXISTS shift_code TEXT NOT NULL DEFAULT 'G';
     ALTER TABLE attendance ADD COLUMN IF NOT EXISTS reason TEXT;
     CREATE TABLE IF NOT EXISTS work_assignments (id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, area TEXT NOT NULL, manpower_id BIGINT REFERENCES manpower(id) ON DELETE SET NULL, scheduled_date DATE NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, instructions TEXT, status TEXT NOT NULL DEFAULT 'Not started', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS shift_change_requests (id BIGSERIAL PRIMARY KEY, manpower_id BIGINT NOT NULL REFERENCES manpower(id) ON DELETE CASCADE, current_shift TEXT NOT NULL, requested_shift TEXT NOT NULL, effective_date DATE NOT NULL, reason TEXT, status TEXT NOT NULL DEFAULT 'Pending', requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ, reviewed_by TEXT);
+    CREATE TABLE IF NOT EXISTS work_change_requests (id BIGSERIAL PRIMARY KEY, manpower_id BIGINT NOT NULL REFERENCES manpower(id) ON DELETE CASCADE, work_assignment_id BIGINT NOT NULL REFERENCES work_assignments(id) ON DELETE CASCADE, requested_date DATE NOT NULL, reason TEXT, status TEXT NOT NULL DEFAULT 'Pending', requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ, reviewed_by TEXT);
   `,
     )
     .then(() => undefined);
