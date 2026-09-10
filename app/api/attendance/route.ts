@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { cookieValue, sign, verifyWorkerToken } from "@/lib/security";
-import { requireAdmin } from "@/lib/admin";
+import { requireAdmin,scopeFilter } from "@/lib/admin";
 import { query } from "@/db";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
@@ -48,11 +48,10 @@ export async function GET(request: Request) {
     return Response.json({ records: data.rows, colleagueLeaves: leaves.rows });
   }
   const admin = await requireAdmin();
-  if (!admin)
+  if (!admin||admin.role==="Safety Officer")
     return Response.json({ error: "Admin sign-in required." }, { status: 401 });
-  const data = await query(
-    'SELECT a.id,a.manpower_id AS "manpowerId",a.attendance_date::text AS "attendanceDate",a.requested_at AS "requestedAt",a.status,a.request_type AS "requestType",a.shift_code AS shift,a.reason,m.name,m.employee_id AS "employeeId",m.contractor FROM attendance a JOIN manpower m ON m.id=a.manpower_id ORDER BY a.attendance_date DESC,a.requested_at DESC',
-  );
+  const scope=scopeFilter(admin);const data = await query(
+    `SELECT a.id,a.manpower_id AS "manpowerId",a.attendance_date::text AS "attendanceDate",a.requested_at AS "requestedAt",a.status,a.request_type AS "requestType",a.shift_code AS shift,a.reason,m.name,m.employee_id AS "employeeId",m.contractor FROM attendance a JOIN manpower m ON m.id=a.manpower_id WHERE ${scope.sql} ORDER BY a.attendance_date DESC,a.requested_at DESC`,scope.values);
   return Response.json({
     records: data.rows,
     workplaceCode: await dailyCode(secret),
@@ -117,14 +116,14 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const admin = await requireAdmin();
-  if (!admin)
+  if (!admin||admin.role==="Safety Officer")
     return Response.json({ error: "Admin sign-in required." }, { status: 401 });
   const body = (await request.json()) as { id?: number; status?: string };
   if (!body.id || !["Approved", "Rejected"].includes(body.status || ""))
     return Response.json({ error: "Invalid request." }, { status: 400 });
-  await query(
-    "UPDATE attendance SET status=$1,reviewed_at=$2,reviewed_by=$3 WHERE id=$4",
-    [body.status, new Date().toISOString(), admin.email, body.id],
+  const scope=scopeFilter(admin);await query(
+    `UPDATE attendance a SET status=$1,reviewed_at=$2,reviewed_by=$3 FROM manpower m WHERE a.id=$4 AND m.id=a.manpower_id AND ${scope.sql.replace("$1", "$5")}`,
+    [body.status, new Date().toISOString(), admin.email, body.id,...scope.values],
   );
   return Response.json({ ok: true });
 }

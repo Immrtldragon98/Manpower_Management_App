@@ -10,6 +10,7 @@ import {
   DoorOpen,
   HardHat,
   LayoutDashboard,
+  KeyRound,
   LogIn,
   Menu,
   QrCode,
@@ -23,6 +24,7 @@ import { QRCodeSVG } from "qrcode.react";
 type Tab =
   | "Dashboard"
   | "Organization"
+  | "Team access"
   | "Manpower"
   | "Schedule planner"
   | "Work"
@@ -47,6 +49,7 @@ type Person = {
 };
 type OrgUnit={id:number;type:"Plant"|"Department"|"Sub-department"|"Discipline";name:string;parentId:number|null};
 type OrgData={company:{id:number;name:string;code:string;timezone:string};units:OrgUnit[]};
+type AdminSession={email:string;name:string;role:"Company Admin"|"Manager"|"Safety Officer";companyId:number|null;scopeType:string;scopeId:number|null};
 type Job = {
   id: number;
   title: string;
@@ -63,13 +66,14 @@ type Job = {
 const nav: [Tab, typeof Users][] = [
   ["Dashboard", LayoutDashboard],
   ["Organization", Building2],
+  ["Team access", KeyRound],
   ["Manpower", Users],
   ["Schedule planner", CalendarCheck],
   ["Work", BriefcaseBusiness],
   ["Gate passes", DoorOpen],
   ["Skills", BadgeCheck],
 ];
-export function AdminApp() {
+export function AdminApp({session}:{session:AdminSession}) {
   const [tab, setTab] = useState<Tab>("Dashboard"),
     [open, setOpen] = useState(false),
     [people, setPeople] = useState<Person[]>([]),
@@ -79,6 +83,7 @@ export function AdminApp() {
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
     [form, setForm] = useState<"person" | "work" | null>(null),
+    [importBusy,setImportBusy]=useState(false),
     [notice, setNotice] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,6 +120,8 @@ export function AdminApp() {
       ),
     [people, query],
   );
+  function downloadTemplate(){const header="Employee ID,Name,Contractor,Trade,Skill Level,Shift,Phone,PIN,Plant,Department,Sub-department,Discipline\n";const url=URL.createObjectURL(new Blob([header],{type:"text/csv"}));const a=document.createElement("a");a.href=url;a.download="Workforce-Hub-Manpower-Template.csv";a.click();URL.revokeObjectURL(url)}
+  async function importCsv(file:File){setImportBusy(true);setError("");const lines=(await file.text()).replace(/^\uFEFF/,"").split(/\r?\n/).filter(Boolean),headers=lines.shift()?.split(",").map(x=>x.trim())||[],expected=["Employee ID","Name","Contractor","Trade","Skill Level","Shift","Phone","PIN","Plant","Department","Sub-department","Discipline"];if(expected.some((x,i)=>headers[i]!==x)){setImportBusy(false);return setError("Use the Workforce Hub template without changing its column order.")}const data=lines.map(line=>{const c=line.split(",").map(x=>x.trim());return{employeeId:c[0],name:c[1],contractor:c[2],trade:c[3],skillLevel:c[4],shift:c[5],phone:c[6],pin:c[7],plant:c[8],department:c[9],subdepartment:c[10],discipline:c[11]}});const r=await fetch("/api/manpower/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({rows:data})}),out=await r.json();setImportBusy(false);if(!r.ok)return setError(out.error);tell(`${out.imported} workers imported`);load()}
   return (
     <div className="shell">
       {open && (
@@ -145,7 +152,7 @@ export function AdminApp() {
           </div>
         </div>
         <nav>
-          {nav.map(([n, I]) => (
+          {nav.filter(([n])=>session.role==="Company Admin"||!["Organization","Team access"].includes(n)).filter(([n])=>session.role!=="Safety Officer"||!["Schedule planner","Work"].includes(n)).map(([n, I]) => (
             <button
               key={n}
               className={tab === n ? "active" : ""}
@@ -163,8 +170,8 @@ export function AdminApp() {
         <div className="access">
           <ShieldCheck />
           <div>
-            <b>Admin access</b>
-            <small>Full permissions</small>
+            <b>{session.role}</b>
+            <small>{session.scopeType}{session.scopeId?" scope":" access"}</small>
           </div>
         </div>
       </aside>
@@ -225,12 +232,15 @@ export function AdminApp() {
                         placeholder="Search ID, name, contractor or trade"
                       />
                     </label>
-                    <button
+                    <div className="tool-actions"><button
                       className="primary"
                       onClick={() => setForm("person")}
                     >
                       + Add manpower
                     </button>
+                    <button className="secondary" onClick={downloadTemplate}>Download Excel template</button>
+                    <label className="secondary file-button">{importBusy?"Importing…":"Import filled template"}<input type="file" accept=".csv,text/csv" disabled={importBusy} onChange={e=>e.target.files?.[0]&&importCsv(e.target.files[0])}/></label>
+                    </div>
                   </div>
                   {loading ? (
                     <Loading />
@@ -250,6 +260,7 @@ export function AdminApp() {
             </section>
           )}
           {tab === "Organization" && <OrganizationSetup data={organization} reload={load}/>} 
+          {tab === "Team access" && <TeamAccess organization={organization}/>} 
           {tab === "Work" && (
             <section className="panel page">
               {form === "work" ? (
@@ -535,6 +546,14 @@ function JobList({ rows }: { rows: Job[] }) {
       ))}
     </div>
   );
+}
+type StaffAccount={id:number;name:string;email:string;role:string;scopeType:string;scopeId:number|null;scopeName?:string;active:boolean};
+function TeamAccess({organization}:{organization:OrgData|null}){
+ const [accounts,setAccounts]=useState<StaffAccount[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const load=useCallback(()=>fetch("/api/staff").then(async r=>{if(r.ok)setAccounts(await r.json())}),[]);
+ useEffect(()=>{load()},[load]);
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const d=new FormData(e.currentTarget),scopeType=String(d.get("scopeType")),body={...Object.fromEntries(d),scopeId:scopeType==="Company"?null:Number(d.get("scopeId"))};const r=await fetch("/api/staff",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const out=await r.json();if(!r.ok)return setError(out.error);setNotice("Team account created.");e.currentTarget.reset();load()}
+ return <section className="panel page"><div className="planner-hero"><div><small>CONTROLLED ACCESS</small><h2>Managers & safety officers</h2><p>Give each person only the workplace scope they are responsible for.</p></div><KeyRound/></div><div className="org-layout"><form className="org-card" onSubmit={submit}><h3>Create account</h3><label className="field"><span>Full name</span><input name="name" required/></label><label className="field"><span>Email</span><input name="email" type="email" required/></label><label className="field"><span>Role</span><select name="role"><option>Manager</option><option>Safety Officer</option></select></label><label className="field"><span>Access level</span><select name="scopeType" defaultValue="Plant"><option>Company</option><option>Plant</option><option>Department</option><option>Sub-department</option><option>Discipline</option></select></label><label className="field"><span>Organization scope</span><select name="scopeId"><option value="">Whole company / choose scope</option>{organization?.units.map(u=><option value={u.id} key={u.id}>{u.type} — {u.name}</option>)}</select></label><label className="field"><span>Temporary password</span><input name="password" type="password" minLength={8} required/></label>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}<button className="primary">Create account</button></form><div className="org-card"><h3>Active accounts</h3><p>Managers handle attendance, leave and work. Safety officers handle passes and training.</p><div className="staff-list">{accounts.map(a=><article key={a.id}><span className="face">{a.name.split(" ").map(x=>x[0]).join("")}</span><div><b>{a.name}</b><small>{a.email}</small><small>{a.role} · {a.scopeName||a.scopeType}</small></div><span className="status ok">Active</span></article>)}{!accounts.length&&<MiniEmpty text="No manager or safety accounts yet."/>}</div></div></div></section>
 }
 function OrganizationSetup({data,reload}:{data:OrgData|null;reload:()=>void}){
  const [type,setType]=useState<OrgUnit["type"]>("Plant"),[parentId,setParentId]=useState(""),[name,setName]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState("");

@@ -12,7 +12,7 @@ export async function GET(){
  return Response.json({company:company.rows[0],units:units.rows});
 }
 export async function POST(request:Request){
- if(!await requireAdmin())return Response.json({error:"Admin sign-in required."},{status:401});
+ const admin=await requireAdmin();if(!admin||admin.role!=="Company Admin")return Response.json({error:"Company admin access required."},{status:403});
  const body=await request.json();
  if(body.action==="company"){
   const p=companySchema.safeParse(body);if(!p.success)return Response.json({error:"Enter a valid company name and code."},{status:400});

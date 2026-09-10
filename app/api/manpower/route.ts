@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireAdmin } from "@/lib/admin";
+import { requireAdmin,scopeFilter,selectedScopeAllowed } from "@/lib/admin";
 import { hashPin, randomSalt } from "@/lib/security";
 import { query } from "@/db";
 
@@ -19,12 +19,12 @@ const workerSchema = z.object({
 });
 
 export async function GET() {
-  if (!(await requireAdmin()))
+  const admin=await requireAdmin();
+  if (!admin)
     return Response.json({ error: "Admin sign-in required." }, { status: 401 });
   try {
-    const data = await query(
-      'SELECT m.id,m.employee_id AS "employeeId",m.name,m.contractor,m.trade,m.skill_level AS "skillLevel",m.shift,m.phone,m.active,m.created_at AS "createdAt",p.name AS plant,d.name AS department,s.name AS "subdepartment",x.name AS discipline FROM manpower m LEFT JOIN organization_units p ON p.id=m.plant_id LEFT JOIN organization_units d ON d.id=m.department_id LEFT JOIN organization_units s ON s.id=m.subdepartment_id LEFT JOIN organization_units x ON x.id=m.discipline_id ORDER BY m.id DESC',
-    );
+    const scope=scopeFilter(admin);const data = await query(
+      `SELECT m.id,m.employee_id AS "employeeId",m.name,m.contractor,m.trade,m.skill_level AS "skillLevel",m.shift,m.phone,m.active,m.created_at AS "createdAt",p.name AS plant,d.name AS department,s.name AS "subdepartment",x.name AS discipline FROM manpower m LEFT JOIN organization_units p ON p.id=m.plant_id LEFT JOIN organization_units d ON d.id=m.department_id LEFT JOIN organization_units s ON s.id=m.subdepartment_id LEFT JOIN organization_units x ON x.id=m.discipline_id WHERE ${scope.sql} ORDER BY m.id DESC`,scope.values);
     return Response.json(data.rows);
   } catch (error) {
     console.error("manpower list failed", error);
@@ -35,7 +35,8 @@ export async function GET() {
   }
 }
 export async function POST(request: Request) {
-  if (!(await requireAdmin()))
+  const admin=await requireAdmin();
+  if (!admin||admin.role==="Safety Officer")
     return Response.json({ error: "Admin sign-in required." }, { status: 401 });
   try {
     const parsed = workerSchema.safeParse(await request.json());
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     const p = parsed.data;
+    if(!selectedScopeAllowed(admin,p))return Response.json({error:"This worker is outside your assigned scope."},{status:403});
     const salt = randomSalt();
     const pinHash = await hashPin(p.pin, salt);
     await query(
@@ -84,10 +86,10 @@ export async function POST(request: Request) {
   }
 }
 export async function PATCH(request: Request) {
-  if (!(await requireAdmin())) return Response.json({ error: "Admin sign-in required." }, { status: 401 });
+  const admin=await requireAdmin();if (!admin||admin.role==="Safety Officer") return Response.json({ error: "Manager access required." }, { status: 403 });
   const body = (await request.json()) as { id?: number; shift?: string };
   if (!body.id || !["A", "B", "C", "G"].includes(body.shift || ""))
     return Response.json({ error: "Choose a valid worker and shift." }, { status: 400 });
-  await query("UPDATE manpower SET shift=$1 WHERE id=$2", [body.shift, body.id]);
+  const scope=scopeFilter(admin);await query(`UPDATE manpower m SET shift=$1 WHERE id=$2 AND ${scope.sql.replace("$1","$3")}`, [body.shift, body.id,...scope.values]);
   return Response.json({ ok: true });
 }
