@@ -22,6 +22,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 type Tab =
   | "Dashboard"
+  | "Organization"
   | "Manpower"
   | "Schedule planner"
   | "Work"
@@ -37,7 +38,15 @@ type Person = {
   shift: string;
   phone?: string;
   active: boolean;
+  plant?: string;
+  department?: string;
+  subdepartment?: string;
+  discipline?: string;
+  companyName?: string;
+  companyCode?: string;
 };
+type OrgUnit={id:number;type:"Plant"|"Department"|"Sub-department"|"Discipline";name:string;parentId:number|null};
+type OrgData={company:{id:number;name:string;code:string;timezone:string};units:OrgUnit[]};
 type Job = {
   id: number;
   title: string;
@@ -53,6 +62,7 @@ type Job = {
 };
 const nav: [Tab, typeof Users][] = [
   ["Dashboard", LayoutDashboard],
+  ["Organization", Building2],
   ["Manpower", Users],
   ["Schedule planner", CalendarCheck],
   ["Work", BriefcaseBusiness],
@@ -64,6 +74,7 @@ export function AdminApp() {
     [open, setOpen] = useState(false),
     [people, setPeople] = useState<Person[]>([]),
     [jobs, setJobs] = useState<Job[]>([]),
+    [organization,setOrganization]=useState<OrgData|null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
@@ -73,13 +84,15 @@ export function AdminApp() {
     setLoading(true);
     setError("");
     try {
-      const [p, w] = await Promise.all([
+      const [p, w, o] = await Promise.all([
         fetch("/api/manpower"),
         fetch("/api/work"),
+        fetch("/api/organization"),
       ]);
-      if (!p.ok || !w.ok) throw new Error();
+      if (!p.ok || !w.ok || !o.ok) throw new Error();
       setPeople(await p.json());
       setJobs(await w.json());
+      setOrganization(await o.json());
     } catch {
       setError("Records could not be loaded. Try again.");
     } finally {
@@ -193,6 +206,7 @@ export function AdminApp() {
             <section className="panel page">
               {form === "person" ? (
                 <PersonForm
+                  organization={organization}
                   close={() => setForm(null)}
                   done={() => {
                     setForm(null);
@@ -235,6 +249,7 @@ export function AdminApp() {
               )}
             </section>
           )}
+          {tab === "Organization" && <OrganizationSetup data={organization} reload={load}/>} 
           {tab === "Work" && (
             <section className="panel page">
               {form === "work" ? (
@@ -469,6 +484,7 @@ function PeopleTable({ rows }: { rows: Person[] }) {
             <th>Employee</th>
             <th>Contractor</th>
             <th>Trade / skill</th>
+            <th>Organization</th>
             <th>Shift</th>
             <th>Status</th>
           </tr>
@@ -485,6 +501,7 @@ function PeopleTable({ rows }: { rows: Person[] }) {
                 {p.trade}
                 <small>{p.skillLevel}</small>
               </td>
+              <td>{p.plant||"Not assigned"}<small>{[p.department,p.subdepartment,p.discipline].filter(Boolean).join(" / ")}</small></td>
               <td>{p.shift}</td>
               <td>
                 <span className="status ok">Active</span>
@@ -519,7 +536,21 @@ function JobList({ rows }: { rows: Job[] }) {
     </div>
   );
 }
-function PersonForm({ close, done }: { close: () => void; done: () => void }) {
+function OrganizationSetup({data,reload}:{data:OrgData|null;reload:()=>void}){
+ const [type,setType]=useState<OrgUnit["type"]>("Plant"),[parentId,setParentId]=useState(""),[name,setName]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const parentType:{[key:string]:string|null}={Plant:null,Department:"Plant","Sub-department":"Department",Discipline:"Sub-department"};
+ if(!data)return <section className="panel page"><Loading/></section>;
+ const parents=data.units.filter(u=>u.type===parentType[type])||[];
+ async function saveCompany(e:FormEvent<HTMLFormElement>){e.preventDefault();const body=Object.fromEntries(new FormData(e.currentTarget));const r=await fetch("/api/organization",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"company",...body})});const out=await r.json();if(!r.ok)return setError(out.error);setNotice("Company profile saved.");reload()}
+ async function addUnit(){setError("");const r=await fetch("/api/organization",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"unit",type,name,parentId:parentId?Number(parentId):null})});const out=await r.json();if(!r.ok)return setError(out.error);setName("");setNotice(`${type} added.`);reload()}
+ function path(u:OrgUnit){const parts=[u.name];let p=data?.units.find(x=>x.id===u.parentId);while(p){parts.unshift(p.name);p=data?.units.find(x=>x.id===p?.parentId)}return parts.join(" / ")}
+ return <section className="panel page org-page"><div className="planner-hero"><div><small>COMPANY FOUNDATION</small><h2>Set up your organization</h2><p>Build the structure once. Attendance, managers, safety passes and reports will follow it.</p></div><span className="company-code">Company code<br/><b>{data?.company.code||"—"}</b></span></div>
+ <div className="org-layout"><form className="org-card" onSubmit={saveCompany}><h3>1. Company profile</h3><p>Workers use this code when signing in.</p><label className="field"><span>Company name</span><input name="name" required defaultValue={data?.company.name}/></label><label className="field"><span>Company code</span><input name="code" required defaultValue={data?.company.code} maxLength={20}/></label><button className="primary">Save company</button></form>
+ <div className="org-card"><h3>2. Add organization levels</h3><p>Add each level from Plant through Discipline.</p><label className="field"><span>Level</span><select value={type} onChange={e=>{setType(e.target.value as OrgUnit["type"]);setParentId("")}}>{["Plant","Department","Sub-department","Discipline"].map(x=><option key={x}>{x}</option>)}</select></label>{parentType[type]&&<label className="field"><span>Under {parentType[type]}</span><select value={parentId} onChange={e=>setParentId(e.target.value)}><option value="">Choose {parentType[type]}</option>{parents.map(p=><option value={p.id} key={p.id}>{path(p)}</option>)}</select></label>}<label className="field"><span>{type} name</span><input value={name} onChange={e=>setName(e.target.value)} placeholder={`Example: ${type==="Plant"?"CH2":type==="Department"?"Maintenance":type==="Sub-department"?"WRM":"Mechanical"}`}/></label><button className="primary" type="button" disabled={name.trim().length<2||!!parentType[type]&&!parentId} onClick={addUnit}>Add {type.toLowerCase()}</button></div></div>
+ {error&&<div className="formerror org-message">{error}</div>}{notice&&<div className="request-success org-message">{notice}</div>}
+ <Head title="Organization structure" sub="Plant → Department → Sub-department → Discipline"/><div className="org-tree">{data?.units.map(u=><div key={u.id} className={`org-level level-${u.type.toLowerCase().replace("-","")}`}><span>{u.type}</span><b>{path(u)}</b></div>)}{!data?.units.length&&<MiniEmpty text="Start by adding your first plant."/>}</div></section>
+}
+function PersonForm({ close, done, organization }: { close: () => void; done: () => void;organization:OrgData|null }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -527,7 +558,7 @@ function PersonForm({ close, done }: { close: () => void; done: () => void }) {
     setBusy(true);
     setError("");
     const d = new FormData(e.currentTarget);
-    const body = Object.fromEntries(d);
+    const body = {...Object.fromEntries(d),plantId:Number(d.get("plantId")),departmentId:Number(d.get("departmentId")),subdepartmentId:Number(d.get("subdepartmentId")),disciplineId:Number(d.get("disciplineId"))};
     const r = await fetch("/api/manpower", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -564,8 +595,15 @@ function PersonForm({ close, done }: { close: () => void; done: () => void }) {
       />
       <Select name="shift" label="Shift" values={["A", "B", "C", "G"]} />
       <Field name="phone" label="Phone number" />
+      <OrgSelects organization={organization}/>
     </Form>
   );
+}
+function OrgSelects({organization}:{organization:OrgData|null}){
+ const [plant,setPlant]=useState(""),[department,setDepartment]=useState(""),[subdepartment,setSubdepartment]=useState(""),[discipline,setDiscipline]=useState("");
+ const units=organization?.units||[], plants=units.filter(u=>u.type==="Plant"),departments=units.filter(u=>u.type==="Department"&&String(u.parentId)===plant),subs=units.filter(u=>u.type==="Sub-department"&&String(u.parentId)===department),disciplines=units.filter(u=>u.type==="Discipline"&&String(u.parentId)===subdepartment);
+ const select=(name:string,label:string,value:string,set:(v:string)=>void,rows:OrgUnit[])=><label className="field"><span>{label} *</span><select name={name} required value={value} onChange={e=>set(e.target.value)}><option value="">Select {label.toLowerCase()}</option>{rows.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></label>;
+ return <>{select("plantId","Plant",plant,v=>{setPlant(v);setDepartment("");setSubdepartment("");setDiscipline("")},plants)}{select("departmentId","Department",department,v=>{setDepartment(v);setSubdepartment("");setDiscipline("")},departments)}{select("subdepartmentId","Sub-department",subdepartment,v=>{setSubdepartment(v);setDiscipline("")},subs)}{select("disciplineId","Discipline",discipline,setDiscipline,disciplines)}</>
 }
 function WorkForm({
   people,
@@ -1038,6 +1076,7 @@ export default function WorkerHome() {
           <p>Use the Employee ID and PIN provided by your admin.</p>
           {error && <div className="formerror">{error}</div>}
           <form onSubmit={login}>
+            <label className="field"><span>Company code</span><input name="companyCode" defaultValue="WORKFORCE" required autoCapitalize="characters"/></label>
             <Field name="employeeId" label="Employee ID" required />
             <Field name="pin" label="PIN" type="password" required />
             <button className="primary" disabled={busy}>
@@ -1080,7 +1119,7 @@ export default function WorkerHome() {
           </span>
           <div>
             <small>
-              {worker.employeeId} · SHIFT {worker.shift}
+              {worker.companyName ? `${worker.companyName} · ` : ""}{worker.employeeId} · SHIFT {worker.shift}
             </small>
             <h1>{worker.name}</h1>
             <p>

@@ -12,6 +12,10 @@ const workerSchema = z.object({
   shift: z.enum(["A", "B", "C", "G"]),
   phone: z.string().trim().max(20).optional().default(""),
   pin: z.string().regex(/^\d{4,8}$/),
+  plantId: z.number().int().positive(),
+  departmentId: z.number().int().positive(),
+  subdepartmentId: z.number().int().positive(),
+  disciplineId: z.number().int().positive(),
 });
 
 export async function GET() {
@@ -19,7 +23,7 @@ export async function GET() {
     return Response.json({ error: "Admin sign-in required." }, { status: 401 });
   try {
     const data = await query(
-      'SELECT id, employee_id AS "employeeId", name, contractor, trade, skill_level AS "skillLevel", shift, phone, active, created_at AS "createdAt" FROM manpower ORDER BY id DESC',
+      'SELECT m.id,m.employee_id AS "employeeId",m.name,m.contractor,m.trade,m.skill_level AS "skillLevel",m.shift,m.phone,m.active,m.created_at AS "createdAt",p.name AS plant,d.name AS department,s.name AS "subdepartment",x.name AS discipline FROM manpower m LEFT JOIN organization_units p ON p.id=m.plant_id LEFT JOIN organization_units d ON d.id=m.department_id LEFT JOIN organization_units s ON s.id=m.subdepartment_id LEFT JOIN organization_units x ON x.id=m.discipline_id ORDER BY m.id DESC',
     );
     return Response.json(data.rows);
   } catch (error) {
@@ -44,7 +48,7 @@ export async function POST(request: Request) {
     const salt = randomSalt();
     const pinHash = await hashPin(p.pin, salt);
     await query(
-      "INSERT INTO manpower (employee_id,name,contractor,trade,skill_level,shift,phone,pin_salt,pin_hash,active,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+      "INSERT INTO manpower (employee_id,name,contractor,trade,skill_level,shift,phone,pin_salt,pin_hash,active,created_at,company_id,plant_id,department_id,subdepartment_id,discipline_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,(SELECT id FROM companies ORDER BY id LIMIT 1),$12,$13,$14,$15)",
       [
         p.employeeId,
         p.name,
@@ -57,6 +61,10 @@ export async function POST(request: Request) {
         pinHash,
         true,
         new Date().toISOString(),
+        p.plantId,
+        p.departmentId,
+        p.subdepartmentId,
+        p.disciplineId,
       ],
     );
     return Response.json({ ok: true }, { status: 201 });

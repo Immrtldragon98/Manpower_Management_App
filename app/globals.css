@@ -1416,3 +1416,5 @@ td small {
     grid-template-columns: repeat(3, 270px);
   }
 }
+.company-code{background:#ffffff18;border:1px solid #ffffff30;border-radius:10px;padding:12px 16px;line-height:1.5}.company-code b{font-size:18px;letter-spacing:.08em}.org-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 20px 20px}.org-card{border:1px solid var(--line);border-radius:12px;padding:20px}.org-card h3{margin:0}.org-card p{color:var(--muted);font-size:13px}.org-card .field{margin:14px 0}.org-message{margin:0 20px 16px}.org-tree{padding:0 20px 24px}.org-level{display:flex;align-items:center;gap:14px;border-top:1px solid var(--line);padding:13px}.org-level span{width:115px;color:var(--muted);font-size:12px}.org-level b{font-size:13px}.level-department{padding-left:34px}.level-subdepartment{padding-left:58px}.level-discipline{padding-left:82px}
+@media(max-width:760px){.org-layout{grid-template-columns:1fr;padding:0 12px 12px}.org-tree{padding:0 12px 18px}.org-level,.level-department,.level-subdepartment,.level-discipline{padding-left:8px;align-items:flex-start;flex-direction:column;gap:4px}.org-level span{width:auto}}
