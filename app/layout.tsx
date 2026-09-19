@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Workforce Hub",
-  description: "Contractor manpower attendance, skills, gate passes and work allocation.",
+  title: "Workforce Hub Lite",
+  description: "Simple attendance, leave, work scheduling and safety passes for small teams.",
   manifest: "/manifest.webmanifest",
   other: {
     "codex-preview": "development",

@@ -28,8 +28,7 @@ type Tab =
   | "Manpower"
   | "Schedule planner"
   | "Work"
-  | "Gate passes"
-  | "Skills";
+  | "Safety passes";
 type Person = {
   id: number;
   employeeId: string;
@@ -70,8 +69,7 @@ const nav: [Tab, typeof Users][] = [
   ["Manpower", Users],
   ["Schedule planner", CalendarCheck],
   ["Work", BriefcaseBusiness],
-  ["Gate passes", DoorOpen],
-  ["Skills", BadgeCheck],
+  ["Safety passes", ShieldCheck],
 ];
 export function AdminApp({session}:{session:AdminSession}) {
   const [tab, setTab] = useState<Tab>("Dashboard"),
@@ -137,8 +135,8 @@ export function AdminApp({session}:{session:AdminSession}) {
             <HardHat />
           </span>
           <div>
-            <b>Workforce</b>
-            <small>HUB</small>
+            <b>Workforce Hub</b>
+            <small>LITE</small>
           </div>
         </div>
         <button className="x" onClick={() => setOpen(false)}>
@@ -310,20 +308,7 @@ export function AdminApp({session}:{session:AdminSession}) {
             </section>
           )}
           {tab === "Schedule planner" && <SchedulePlanner people={people} refreshPeople={load} />}
-          {tab === "Gate passes" && (
-            <Empty
-              icon={DoorOpen}
-              title="No gate-pass requests"
-              text="Worker gate-pass requests will appear here."
-            />
-          )}
-          {tab === "Skills" && (
-            <Empty
-              icon={BadgeCheck}
-              title="No skills recorded"
-              text="Skills added to manpower profiles will appear here."
-            />
-          )}
+          {tab === "Safety passes" && <SafetyPassCentre people={people} />}
         </div>
       </main>
       {notice && (
@@ -924,6 +909,23 @@ function SchedulePlanner({people,refreshPeople}:{people:Person[];refreshPeople:(
   );
 }
 
+function SafetyPassCentre({people}:{people:Person[]}){
+ const [data,setData]=useState<{passes:SafetyPass[];requests:SafetyRequest[];passTypes:string[]}>({passes:[],requests:[],passTypes:[]}),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const load=useCallback(()=>fetch("/api/safety").then(async r=>{if(!r.ok)throw new Error();setData(await r.json())}).catch(()=>setError("Safety records could not be loaded.")),[]);useEffect(()=>{load()},[load]);
+ async function savePass(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const d=new FormData(e.currentTarget),body={action:"pass",manpowerId:Number(d.get("manpowerId")),passType:d.get("passType"),issuedOn:d.get("issuedOn"),expiresOn:d.get("expiresOn"),status:d.get("status"),certificateRef:d.get("certificateRef"),notes:d.get("notes")};const r=await fetch("/api/safety",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(body)}),out=await r.json();if(!r.ok)return setError(out.error);setNotice("Safety pass saved.");e.currentTarget.reset();load()}
+ async function review(id:number,status:string){await fetch("/api/safety",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({action:"review",id,status})});load()}
+ const soon=data.passes.filter(p=>p.expiresOn&&p.status==="Valid"&&new Date(p.expiresOn).getTime()-Date.now()<=30*86400000).length;
+ return <section className="panel page"><div className="planner-hero"><div><small>SAFETY PASS CENTRE</small><h2>Pass validity without paperwork</h2><p>Issue essential passes, review worker requests and spot upcoming expiry.</p></div><ShieldCheck/></div><div className="planner-metrics"><article><b>{data.passes.filter(p=>p.status==="Valid").length}</b><span>Valid passes</span></article><article><b>{soon}</b><span>Expiring in 30 days</span></article><article><b>{data.passes.filter(p=>p.status==="Expired").length}</b><span>Expired</span></article><article><b>{data.requests.filter(r=>r.status==="Pending").length}</b><span>Pending requests</span></article></div>
+ <div className="safety-layout"><form className="org-card" onSubmit={savePass}><h3>Issue or update pass</h3><label className="field"><span>Worker</span><select name="manpowerId" required defaultValue=""><option value="" disabled>Select worker</option>{people.map(p=><option key={p.id} value={p.id}>{p.employeeId} — {p.name}</option>)}</select></label><label className="field"><span>Pass type</span><select name="passType">{data.passTypes.map(x=><option key={x}>{x}</option>)}</select></label><div className="request-fields"><label className="field"><span>Issue date</span><input name="issuedOn" type="date"/></label><label className="field"><span>Expiry date</span><input name="expiresOn" type="date"/></label></div><label className="field"><span>Status</span><select name="status"><option>Valid</option><option>Pending</option><option>Expired</option><option>Suspended</option></select></label><label className="field"><span>Certificate / reference</span><input name="certificateRef"/></label><label className="field"><span>Notes</span><textarea name="notes" rows={2}/></label>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}<button className="primary">Save pass</button></form>
+ <div className="org-card"><h3>Training & test requests</h3><p>Workers can request only what they need. Approve here after scheduling it.</p><div className="safety-list">{data.requests.map(r=><article key={r.id}><div className="grow"><b>{r.name} · {r.requestKind}</b><small>{r.employeeId} · {r.passType}</small>{r.note&&<small>{r.note}</small>}</div><span className={`status ${r.status==="Approved"?"ok":r.status==="Pending"?"wait":"plain"}`}>{r.status}</span>{r.status==="Pending"&&<div className="review"><button onClick={()=>review(r.id,"Rejected")}>Reject</button><button onClick={()=>review(r.id,"Approved")}>Approve</button></div>}</article>)}{!data.requests.length&&<MiniEmpty text="No training or test requests."/>}</div></div></div>
+ <Head title="Worker passes" sub="Valid, expiring, expired and suspended records"/><div className="pass-grid">{data.passes.map(p=><article key={p.id}><div><b>{p.name}</b><small>{p.employeeId} · {p.passType}</small></div><span className={`status ${p.status==="Valid"?"ok":p.status==="Pending"?"wait":"plain"}`}>{p.status}</span><p>{p.expiresOn?`Valid until ${p.expiresOn}`:"No expiry date"}</p></article>)}{!data.passes.length&&<MiniEmpty text="No safety passes issued yet."/>}</div></section>
+}
+
+function WorkerSafety({safety,reload}:{safety:{passes:SafetyPass[];requests:SafetyRequest[];passTypes:string[]};reload:()=>void}){
+ const [error,setError]=useState(""),[notice,setNotice]=useState("");async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();const body=Object.fromEntries(new FormData(e.currentTarget));const r=await fetch("/api/safety",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}),out=await r.json();if(!r.ok)return setError(out.error);setNotice("Request sent to the safety officer.");e.currentTarget.reset();reload()}
+ return <section className="request-panel"><div className="request-head"><div><small>MY SAFETY</small><h2>Passes & training</h2><p>Check validity and request a test, training or renewal.</p></div><ShieldCheck/></div><div className="pass-grid worker-passes">{safety.passes.map(p=><article key={p.id}><div><b>{p.passType}</b><small>{p.expiresOn?`Valid until ${p.expiresOn}`:"Expiry not set"}</small></div><span className={`status ${p.status==="Valid"?"ok":p.status==="Pending"?"wait":"plain"}`}>{p.status}</span></article>)}{!safety.passes.length&&<MiniEmpty text="No safety passes are recorded for you yet."/>}</div><form className="change-form" onSubmit={submit}><h3>Request training or test</h3><div className="request-fields"><label className="field"><span>Pass type</span><select name="passType">{safety.passTypes.map(x=><option key={x}>{x}</option>)}</select></label><label className="field"><span>Request</span><select name="requestKind"><option>Training</option><option>Test</option><option>Renewal</option></select></label></div><label className="field"><span>Note</span><textarea name="note" rows={2} placeholder="Optional message"/></label>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}<button className="primary">Send request</button></form><div className="request-history">{safety.requests.map(r=><div className="row" key={r.id}><div className="grow"><b>{r.requestKind} · {r.passType}</b><small>{new Date(r.requestedAt).toLocaleDateString()}</small></div><span className={`status ${r.status==="Approved"?"ok":r.status==="Pending"?"wait":"plain"}`}>{r.status}</span></div>)}</div></section>
+}
+
 type WorkerRequest = {
   id: number;
   attendanceDate: string;
@@ -934,6 +936,8 @@ type WorkerRequest = {
 };
 type ColleagueLeave={id:number;attendanceDate:string;shift:string;name:string;employeeId:string};
 type ChangeData={shiftRequests:Array<any>;workRequests:Array<any>};
+type SafetyPass={id:number;manpowerId?:number;employeeId?:string;name?:string;passType:string;issuedOn?:string;expiresOn?:string;status:string;certificateRef?:string;notes?:string};
+type SafetyRequest={id:number;manpowerId?:number;employeeId?:string;name?:string;passType:string;requestKind:string;note?:string;status:string;requestedAt:string};
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const todayKey = () => dateKey(new Date());
 function calendarMonths() {
@@ -1016,16 +1020,18 @@ export default function WorkerHome() {
     [colleagueLeaves,setColleagueLeaves]=useState<ColleagueLeave[]>([]),
     [jobs,setJobs]=useState<Job[]>([]),
     [changes,setChanges]=useState<ChangeData>({shiftRequests:[],workRequests:[]}),
-    [workerTab,setWorkerTab]=useState<"Schedule"|"My work"|"Team leave"|"Requests">("Schedule"),
+    [workerTab,setWorkerTab]=useState<"Schedule"|"My work"|"Team leave"|"Requests"|"My passes">("Schedule"),
+    [safety,setSafety]=useState<{passes:SafetyPass[];requests:SafetyRequest[];passTypes:string[]}>({passes:[],requests:[],passTypes:[]}),
     [changeShift,setChangeShift]=useState("A"),
     [effectiveDate,setEffectiveDate]=useState(todayKey()),
     [changeReason,setChangeReason]=useState(""),
     [notice, setNotice] = useState("");
   const loadRequests = useCallback(async () => {
-    const [a,w,c]=await Promise.all([fetch("/api/attendance?mine=1"),fetch("/api/work?mine=1"),fetch("/api/change-requests")]);
+    const [a,w,c,s]=await Promise.all([fetch("/api/attendance?mine=1"),fetch("/api/work?mine=1"),fetch("/api/change-requests"),fetch("/api/safety")]);
     if (a.ok){const out=await a.json();setRecords(out.records);setColleagueLeaves(out.colleagueLeaves||[])}
     if(w.ok)setJobs(await w.json());
     if(c.ok)setChanges(await c.json());
+    if(s.ok)setSafety(await s.json());
   }, []);
   useEffect(() => {
     fetch("/api/worker/me").then(async (r) => {
@@ -1087,8 +1093,8 @@ export default function WorkerHome() {
               <HardHat />
             </span>
             <div>
-              <b>Workforce Hub</b>
-              <small>WORKER ATTENDANCE</small>
+              <b>Workforce Hub Lite</b>
+              <small>WORKER ACCESS</small>
             </div>
           </div>
           <h1>Worker sign in</h1>
@@ -1115,7 +1121,7 @@ export default function WorkerHome() {
             <HardHat />
           </span>
           <div>
-            <b>Workforce Hub</b>
+            <b>Workforce Hub Lite</b>
             <small>WORKER</small>
           </div>
         </div>
@@ -1146,7 +1152,7 @@ export default function WorkerHome() {
             </p>
           </div>
         </section>
-        <nav className="worker-tabs">{(["Schedule","My work","Team leave","Requests"] as const).map(t=><button key={t} className={workerTab===t?"active":""} onClick={()=>{setWorkerTab(t);setError("");setNotice("")}}>{t}</button>)}</nav>
+        <nav className="worker-tabs">{(["Schedule","My work","My passes","Team leave","Requests"] as const).map(t=><button key={t} className={workerTab===t?"active":""} onClick={()=>{setWorkerTab(t);setError("");setNotice("")}}>{t}</button>)}</nav>
         {workerTab==="Schedule"&&<section className="worker-summary"><article><b>{records.filter(r=>r.requestType==="Attendance"&&r.status==="Approved").length}</b><span>Attendance days</span></article><article><b>{records.filter(r=>r.requestType==="Leave"&&r.status==="Approved").length}</b><span>Leave days</span></article>{["A","B","C","G"].map(s=><article key={s}><b>{records.filter(r=>r.requestType==="Attendance"&&r.shift===s).length}</b><span>Shift {s}</span></article>)}</section>}
         {workerTab==="Schedule"&&<section className="request-panel">
           <div className="request-head">
@@ -1275,6 +1281,7 @@ export default function WorkerHome() {
           </div>
         </section>}
         {workerTab==="My work"&&<section className="request-panel"><div className="request-head"><div><small>ASSIGNED TO ME</small><h2>My work</h2><p>Check your area, timing and instructions. Request a date change if needed.</p></div><ClipboardList/></div><div className="worker-job-list">{jobs.map(j=><article key={j.id}><div><small>{j.scheduledDate} · {j.startTime}–{j.endTime}</small><h3>{j.title}</h3><p>{j.area}{j.instructions?` · ${j.instructions}`:""}</p><span className="status plain">{j.status}</span></div><details><summary>Request change</summary><label className="field"><span>Requested date</span><input id={`jobdate${j.id}`} type="date" min={todayKey()} defaultValue={j.scheduledDate}/></label><label className="field"><span>Reason</span><textarea id={`jobreason${j.id}`} rows={2}/></label><button className="primary" onClick={()=>{const d=(document.getElementById(`jobdate${j.id}`) as HTMLInputElement).value;const rs=(document.getElementById(`jobreason${j.id}`) as HTMLTextAreaElement).value;submitChange({kind:"work",workAssignmentId:j.id,requestedDate:d,reason:rs},"Work change request submitted.")}}>Submit request</button></details></article>)}{!jobs.length&&<MiniEmpty text="No work has been assigned yet."/>}</div></section>}
+        {workerTab==="My passes"&&<WorkerSafety safety={safety} reload={loadRequests}/>} 
         {workerTab==="Team leave"&&<section className="request-panel"><div className="request-head"><div><small>TEAM AVAILABILITY</small><h2>Colleagues on leave</h2><p>Approved leave dates are visible for shift planning. Private reasons stay hidden.</p></div><Users/></div><div className="leave-board">{colleagueLeaves.map(l=><article key={l.id}><CalendarDays/><div><b>{l.name}</b><small>{l.attendanceDate} · Shift {l.shift}</small></div></article>)}{!colleagueLeaves.length&&<MiniEmpty text="No approved team leave this month or next month."/>}</div></section>}
         {workerTab==="Requests"&&<section className="request-panel"><div className="request-head"><div><small>SELF SERVICE</small><h2>Shift & work changes</h2><p>Send requests to your admin and track approval status.</p></div><CalendarCheck/></div><div className="change-form"><div className="request-fields"><label className="field"><span>Requested shift</span><select value={changeShift} onChange={e=>setChangeShift(e.target.value)}>{["A","B","C","G"].map(s=><option key={s}>{s}</option>)}</select></label><label className="field"><span>Effective date</span><input type="date" min={todayKey()} value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/></label></div><label className="field"><span>Reason</span><textarea rows={3} value={changeReason} onChange={e=>setChangeReason(e.target.value)} placeholder="Why do you need this shift change?"/></label>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}<button className="primary" disabled={busy||changeReason.trim().length<3} onClick={()=>submitChange({kind:"shift",requestedShift:changeShift,effectiveDate,reason:changeReason},"Shift change request submitted.")}>Request shift change</button></div><div className="request-history">{[...changes.shiftRequests.map(r=>({id:`s${r.id}`,title:`Shift ${r.currentShift} → ${r.requestedShift}`,date:r.effectiveDate,status:r.status})),...changes.workRequests.map(r=>({id:`w${r.id}`,title:`Work: ${r.title}`,date:r.requestedDate,status:r.status}))].map(r=><div className="row" key={r.id}><div className="grow"><b>{r.title}</b><small>{r.date}</small></div><span className={`status ${r.status==="Approved"?"ok":r.status==="Pending"?"wait":"plain"}`}>{r.status}</span></div>)}</div></section>}
       </main>
