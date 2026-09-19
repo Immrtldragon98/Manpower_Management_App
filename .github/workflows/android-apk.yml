@@ -1,16 +1,7 @@
-name: Build Android APK
+name: Build signed Workforce Hub Lite APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "android/**"
-      - "android-shell/**"
-      - "capacitor.config.ts"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/android-apk.yml"
 
 permissions:
   contents: write
@@ -30,14 +21,25 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run android:sync
-      - name: Build installable APK
+      - name: Restore permanent signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.WORKFORCE_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/workforce-hub-lite.jks"
+      - name: Build permanently signed APK
         working-directory: android
-        run: ./gradlew assembleDebug
+        env:
+          WORKFORCE_KEYSTORE_PATH: ${{ runner.temp }}/workforce-hub-lite.jks
+          WORKFORCE_KEYSTORE_PASSWORD: ${{ secrets.WORKFORCE_KEYSTORE_PASSWORD }}
+          WORKFORCE_KEY_PASSWORD: ${{ secrets.WORKFORCE_KEY_PASSWORD }}
+          WORKFORCE_KEY_ALIAS: workforce-hub-lite
+        run: ./gradlew assembleRelease
       - name: Prepare release file
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk Workforce-Hub.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk Workforce-Hub-Lite.apk
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="android-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" Workforce-Hub.apk --title "Workforce Hub Android" --notes "Installable Android APK for Workforce Hub."
+          gh release create "$TAG" Workforce-Hub-Lite.apk --title "Workforce Hub Lite Android" --notes "Permanently signed Android release. Future releases using the same signing key install as updates."

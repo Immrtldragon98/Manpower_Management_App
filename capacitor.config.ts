@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.immrtldragon.workforcehub",
-  appName: "Workforce Hub",
+  appName: "Workforce Hub Lite",
   webDir: "android-shell",
   server: {
     url: "https://workforce-hub-production.up.railway.app",

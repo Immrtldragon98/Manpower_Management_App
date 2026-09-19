@@ -7,8 +7,8 @@ android {
         applicationId "com.immrtldragon.workforcehub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "2.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,9 +16,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def keyStorePath = System.getenv("WORKFORCE_KEYSTORE_PATH")
+            if (keyStorePath) {
+                storeFile file(keyStorePath)
+                storePassword System.getenv("WORKFORCE_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("WORKFORCE_KEY_ALIAS") ?: "workforce-hub-lite"
+                keyPassword System.getenv("WORKFORCE_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
