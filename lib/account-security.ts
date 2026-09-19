@@ -1,0 +1,8 @@
+import { query } from "@/db";
+
+const MAX_FAILURES=5,LOCK_MINUTES=15;
+export function loginKey(kind:string,company:string,identifier:string){return `${kind}:${company.trim().toUpperCase()}:${identifier.trim().toLowerCase()}`}
+export async function loginAllowed(key:string){const r=await query<{failed_count:number;locked_until:string|null}>('SELECT failed_count,locked_until FROM login_attempts WHERE identity_key=$1',[key]);const row=r.rows[0];if(!row?.locked_until)return {allowed:true};const seconds=Math.ceil((new Date(row.locked_until).getTime()-Date.now())/1000);return seconds>0?{allowed:false,retryAfter:seconds}:{allowed:true}}
+export async function recordFailure(key:string){const r=await query<{failed_count:number}>('INSERT INTO login_attempts(identity_key,failed_count,last_attempt) VALUES($1,1,NOW()) ON CONFLICT(identity_key) DO UPDATE SET failed_count=login_attempts.failed_count+1,last_attempt=NOW() RETURNING failed_count',[key]);const count=Number(r.rows[0]?.failed_count||1);if(count>=MAX_FAILURES)await query(`UPDATE login_attempts SET locked_until=NOW()+INTERVAL '${LOCK_MINUTES} minutes',failed_count=0 WHERE identity_key=$1`,[key]);return count>=MAX_FAILURES}
+export async function clearFailures(key:string){await query('DELETE FROM login_attempts WHERE identity_key=$1',[key])}
+export async function audit(input:{companyId?:number|null;actorType:string;actorId:string;action:string;entityType:string;entityId?:string|number|null;summary:string}){await query('INSERT INTO audit_logs(company_id,actor_type,actor_id,action,entity_type,entity_id,summary) VALUES($1,$2,$3,$4,$5,$6,$7)',[input.companyId||null,input.actorType,input.actorId,input.action,input.entityType,input.entityId==null?null:String(input.entityId),input.summary])}

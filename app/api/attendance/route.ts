@@ -2,6 +2,7 @@ import { z } from "zod";
 import { cookieValue, sign, verifyWorkerToken } from "@/lib/security";
 import { requireAdmin,scopeFilter } from "@/lib/admin";
 import { query } from "@/db";
+import { audit } from "@/lib/account-security";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
 const requestSchema = z.object({
@@ -100,6 +101,7 @@ export async function POST(request: Request) {
         item.reason || null,
       ],
     );
+    await audit({actorType:"Worker",actorId:String(workerId),action:"CREATE_REQUEST",entityType:item.type,summary:`Submitted ${item.type.toLowerCase()} for ${item.date}`});
     return Response.json({ ok: true }, { status: 201 });
   } catch (error) {
     const duplicate = String(error).includes("23505");
@@ -125,5 +127,6 @@ export async function PATCH(request: Request) {
     `UPDATE attendance a SET status=$1,reviewed_at=$2,reviewed_by=$3 FROM manpower m WHERE a.id=$4 AND m.id=a.manpower_id AND ${scope.sql.replace("$1", "$5")}`,
     [body.status, new Date().toISOString(), admin.email, body.id,...scope.values],
   );
+  await audit({companyId:admin.companyId,actorType:admin.role,actorId:admin.email,action:"REVIEW_REQUEST",entityType:"Attendance",entityId:body.id,summary:`${body.status} attendance or leave request`});
   return Response.json({ ok: true });
 }

@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import RecoveryRequest from "@/app/RecoveryRequest";
 type Tab =
   | "Dashboard"
   | "Organization"
@@ -28,7 +29,8 @@ type Tab =
   | "Manpower"
   | "Schedule planner"
   | "Work"
-  | "Safety passes";
+  | "Safety passes"
+  | "Recovery & audit";
 type Person = {
   id: number;
   employeeId: string;
@@ -70,6 +72,7 @@ const nav: [Tab, typeof Users][] = [
   ["Schedule planner", CalendarCheck],
   ["Work", BriefcaseBusiness],
   ["Safety passes", ShieldCheck],
+  ["Recovery & audit", KeyRound],
 ];
 export function AdminApp({session}:{session:AdminSession}) {
   const [tab, setTab] = useState<Tab>("Dashboard"),
@@ -150,7 +153,7 @@ export function AdminApp({session}:{session:AdminSession}) {
           </div>
         </div>
         <nav>
-          {nav.filter(([n])=>session.role==="Company Admin"||!["Organization","Team access"].includes(n)).filter(([n])=>session.role!=="Safety Officer"||!["Schedule planner","Work"].includes(n)).map(([n, I]) => (
+          {nav.filter(([n])=>session.role==="Company Admin"||!["Organization","Team access","Recovery & audit"].includes(n)).filter(([n])=>session.role!=="Safety Officer"||!["Schedule planner","Work"].includes(n)).map(([n, I]) => (
             <button
               key={n}
               className={tab === n ? "active" : ""}
@@ -309,6 +312,7 @@ export function AdminApp({session}:{session:AdminSession}) {
           )}
           {tab === "Schedule planner" && <SchedulePlanner people={people} refreshPeople={load} />}
           {tab === "Safety passes" && <SafetyPassCentre people={people} />}
+          {tab === "Recovery & audit" && <RecoveryAudit />}
         </div>
       </main>
       {notice && (
@@ -909,6 +913,13 @@ function SchedulePlanner({people,refreshPeople}:{people:Person[];refreshPeople:(
   );
 }
 
+function RecoveryAudit(){
+ const [requests,setRequests]=useState<any[]>([]),[logs,setLogs]=useState<any[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const load=useCallback(()=>Promise.all([fetch("/api/recovery").then(r=>r.ok?r.json():[]).then(setRequests),fetch("/api/audit").then(r=>r.ok?r.json():[]).then(setLogs)]),[]);useEffect(()=>{load()},[load]);
+ async function reset(r:any){const value=prompt(r.accountType==="Worker"?"Enter a temporary 4–8 digit PIN":"Enter a temporary password (8+ characters)");if(!value)return;const out=await fetch("/api/recovery",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({id:r.id,temporaryCredential:value})}),body=await out.json();if(!out.ok)return setError(body.error);setNotice("Credential reset. Give the temporary value to the account owner securely.");load()}
+ return <section className="panel page"><div className="planner-hero"><div><small>SECURITY & ACCOUNTABILITY</small><h2>Recovery and audit</h2><p>Resolve locked-out accounts and review important system actions.</p></div><KeyRound/></div><div className="org-layout"><div className="org-card"><h3>Pending recovery</h3><p>Verify the person before issuing a temporary credential.</p><div className="staff-list">{requests.map(r=><article key={r.id}><div><b>{r.identifier}</b><small>{r.accountType} · {r.companyCode}</small><small>{new Date(r.requestedAt).toLocaleString()}</small></div><button className="secondary" onClick={()=>reset(r)}>Reset</button></article>)}{!requests.length&&<MiniEmpty text="No pending recovery requests."/>}</div>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}</div><div className="org-card"><h3>Audit history</h3><p>Append-only record of sign-ins, resets and approvals.</p><div className="audit-list">{logs.map(l=><article key={l.id}><div><b>{l.summary}</b><small>{l.actorType} · {l.action} · {new Date(l.createdAt).toLocaleString()}</small></div></article>)}{!logs.length&&<MiniEmpty text="No audit events yet."/>}</div></div></div></section>
+}
+
 function SafetyPassCentre({people}:{people:Person[]}){
  const [data,setData]=useState<{passes:SafetyPass[];requests:SafetyRequest[];passTypes:string[]}>({passes:[],requests:[],passTypes:[]}),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const load=useCallback(()=>fetch("/api/safety").then(async r=>{if(!r.ok)throw new Error();setData(await r.json())}).catch(()=>setError("Safety records could not be loaded.")),[]);useEffect(()=>{load()},[load]);
@@ -1110,6 +1121,7 @@ export default function WorkerHome() {
             </button>
           </form>
           <a href="/admin">Admin sign in</a>
+          <RecoveryRequest type="Worker"/>
         </section>
       </div>
     );

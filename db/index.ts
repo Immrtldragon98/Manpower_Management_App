@@ -41,6 +41,11 @@ export function ensureSchema() {
     CREATE TABLE IF NOT EXISTS work_change_requests (id BIGSERIAL PRIMARY KEY, manpower_id BIGINT NOT NULL REFERENCES manpower(id) ON DELETE CASCADE, work_assignment_id BIGINT NOT NULL REFERENCES work_assignments(id) ON DELETE CASCADE, requested_date DATE NOT NULL, reason TEXT, status TEXT NOT NULL DEFAULT 'Pending', requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ, reviewed_by TEXT);
     CREATE TABLE IF NOT EXISTS safety_passes (id BIGSERIAL PRIMARY KEY, manpower_id BIGINT NOT NULL REFERENCES manpower(id) ON DELETE CASCADE, pass_type TEXT NOT NULL, issued_on DATE, expires_on DATE, status TEXT NOT NULL DEFAULT 'Pending', certificate_ref TEXT, notes TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_by TEXT, UNIQUE(manpower_id,pass_type));
     CREATE TABLE IF NOT EXISTS safety_requests (id BIGSERIAL PRIMARY KEY, manpower_id BIGINT NOT NULL REFERENCES manpower(id) ON DELETE CASCADE, pass_type TEXT NOT NULL, request_kind TEXT NOT NULL, note TEXT, status TEXT NOT NULL DEFAULT 'Pending', requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ, reviewed_by TEXT);
+    CREATE TABLE IF NOT EXISTS login_attempts (identity_key TEXT PRIMARY KEY, failed_count INTEGER NOT NULL DEFAULT 0, locked_until TIMESTAMPTZ, last_attempt TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS recovery_requests (id BIGSERIAL PRIMARY KEY, company_code TEXT NOT NULL, account_type TEXT NOT NULL, identifier TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), resolved_at TIMESTAMPTZ, resolved_by TEXT);
+    CREATE TABLE IF NOT EXISTS audit_logs (id BIGSERIAL PRIMARY KEY, company_id BIGINT REFERENCES companies(id) ON DELETE SET NULL, actor_type TEXT NOT NULL, actor_id TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT, summary TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    ALTER TABLE manpower ADD COLUMN IF NOT EXISTS must_change_pin BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
   `,
     )
     .then(() => undefined);

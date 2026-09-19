@@ -3,7 +3,7 @@ import { query } from "@/db";
 import { canManage, requireAdmin, scopeFilter } from "@/lib/admin";
 import { cookieValue, verifyWorkerToken } from "@/lib/security";
 
-const passTypes = ["Work at height","Confined space","Electrical safety","LOTO","Fire safety","Hot work","First aid","Lifting & rigging","Contractor induction","Medical fitness"] as const;
+const passTypes = ["Work at height","Confined space","Electrical safety","LOTO","Fire safety","Hot work","First aid","Lifting & rigging","Contractor induction"] as const;
 const requestSchema=z.object({passType:z.enum(passTypes),requestKind:z.enum(["Training","Test","Renewal"]),note:z.string().trim().max(300).optional().default("")});
 const passSchema=z.object({action:z.literal("pass"),manpowerId:z.number().int().positive(),passType:z.enum(passTypes),issuedOn:z.string().optional(),expiresOn:z.string().optional(),status:z.enum(["Valid","Pending","Expired","Suspended"]),certificateRef:z.string().trim().max(180).optional().default(""),notes:z.string().trim().max(300).optional().default("")});
 const reviewSchema=z.object({action:z.literal("review"),id:z.number().int().positive(),status:z.enum(["Approved","Rejected"])});

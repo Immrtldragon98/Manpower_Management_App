@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requireAdmin,scopeFilter } from "@/lib/admin";
 import { cookieValue, verifyWorkerToken } from "@/lib/security";
 import { query } from "@/db";
+import { audit } from "@/lib/account-security";
 
 const workSchema=z.object({ title:z.string().trim().min(2).max(140), area:z.string().trim().min(2).max(100), manpowerId:z.number().int().positive().nullable(), scheduledDate:z.string().min(8).max(10), startTime:z.string().min(4).max(5), endTime:z.string().min(4).max(5), instructions:z.string().trim().max(500).optional().default("") });
 export async function GET(request:Request){
@@ -18,6 +19,6 @@ export async function GET(request:Request){
 }
 export async function POST(request:Request){
  const admin=await requireAdmin();if(!admin||admin.role==="Safety Officer") return Response.json({error:"Manager access required."},{status:403});
- try{const parsed=workSchema.safeParse(await request.json());if(!parsed.success)return Response.json({error:"Check the required work fields."},{status:400});const w=parsed.data;const scope=scopeFilter(admin);if(w.manpowerId){const allowed=await query(`SELECT id FROM manpower m WHERE id=$1 AND ${scope.sql.replace("$1","$2")}`,[w.manpowerId,...scope.values]);if(!allowed.rowCount)return Response.json({error:"This worker is outside your assigned scope."},{status:403})}await query("INSERT INTO work_assignments (title,area,manpower_id,scheduled_date,start_time,end_time,instructions,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",[w.title,w.area,w.manpowerId,w.scheduledDate,w.startTime,w.endTime,w.instructions,"Not started",new Date().toISOString()]);return Response.json({ok:true},{status:201})}
+ try{const parsed=workSchema.safeParse(await request.json());if(!parsed.success)return Response.json({error:"Check the required work fields."},{status:400});const w=parsed.data;const scope=scopeFilter(admin);if(w.manpowerId){const allowed=await query(`SELECT id FROM manpower m WHERE id=$1 AND ${scope.sql.replace("$1","$2")}`,[w.manpowerId,...scope.values]);if(!allowed.rowCount)return Response.json({error:"This worker is outside your assigned scope."},{status:403})}await query("INSERT INTO work_assignments (title,area,manpower_id,scheduled_date,start_time,end_time,instructions,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",[w.title,w.area,w.manpowerId,w.scheduledDate,w.startTime,w.endTime,w.instructions,"Not started",new Date().toISOString()]);await audit({companyId:admin.companyId,actorType:admin.role,actorId:admin.email,action:"CREATE",entityType:"Work assignment",summary:`Assigned ${w.title} for ${w.scheduledDate}`});return Response.json({ok:true},{status:201})}
  catch(error){console.error("work create failed",error);return Response.json({error:"Unable to create assignment."},{status:500})}
 }
