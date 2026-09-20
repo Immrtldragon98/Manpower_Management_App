@@ -16,6 +16,7 @@ const workerSchema = z.object({
   departmentId: z.number().int().positive(),
   subdepartmentId: z.number().int().positive(),
   disciplineId: z.number().int().positive(),
+  managerId: z.number().int().positive(),
 });
 
 export async function GET() {
@@ -24,7 +25,7 @@ export async function GET() {
     return Response.json({ error: "Admin sign-in required." }, { status: 401 });
   try {
     const scope=scopeFilter(admin);const data = await query(
-      `SELECT m.id,m.employee_id AS "employeeId",m.name,m.contractor,m.trade,m.skill_level AS "skillLevel",m.shift,m.phone,m.active,m.created_at AS "createdAt",p.name AS plant,d.name AS department,s.name AS "subdepartment",x.name AS discipline FROM manpower m LEFT JOIN organization_units p ON p.id=m.plant_id LEFT JOIN organization_units d ON d.id=m.department_id LEFT JOIN organization_units s ON s.id=m.subdepartment_id LEFT JOIN organization_units x ON x.id=m.discipline_id WHERE ${scope.sql} ORDER BY m.id DESC`,scope.values);
+      `SELECT m.id,m.employee_id AS "employeeId",m.name,m.contractor,m.trade,m.skill_level AS "skillLevel",m.shift,m.phone,m.manager_id AS "managerId",mgr.name AS "managerName",m.active,m.created_at AS "createdAt",p.name AS plant,d.name AS department,s.name AS "subdepartment",x.name AS discipline FROM manpower m LEFT JOIN staff_accounts mgr ON mgr.id=m.manager_id LEFT JOIN organization_units p ON p.id=m.plant_id LEFT JOIN organization_units d ON d.id=m.department_id LEFT JOIN organization_units s ON s.id=m.subdepartment_id LEFT JOIN organization_units x ON x.id=m.discipline_id WHERE ${scope.sql} ORDER BY m.id DESC`,scope.values);
     return Response.json(data.rows);
   } catch (error) {
     console.error("manpower list failed", error);
@@ -49,8 +50,10 @@ export async function POST(request: Request) {
     if(!selectedScopeAllowed(admin,p))return Response.json({error:"This worker is outside your assigned scope."},{status:403});
     const salt = randomSalt();
     const pinHash = await hashPin(p.pin, salt);
+    const companyId=admin.companyId||(await query("SELECT id FROM companies ORDER BY id LIMIT 1")).rows[0].id;
+    const manager=await query("SELECT id FROM staff_accounts WHERE id=$1 AND company_id=$2 AND role='Manager' AND active=TRUE",[p.managerId,companyId]);if(!manager.rowCount)return Response.json({error:"Choose an active manager from this company."},{status:400});
     await query(
-      "INSERT INTO manpower (employee_id,name,contractor,trade,skill_level,shift,phone,pin_salt,pin_hash,active,created_at,company_id,plant_id,department_id,subdepartment_id,discipline_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,(SELECT id FROM companies ORDER BY id LIMIT 1),$12,$13,$14,$15)",
+      "INSERT INTO manpower (employee_id,name,contractor,trade,skill_level,shift,phone,pin_salt,pin_hash,active,created_at,company_id,plant_id,department_id,subdepartment_id,discipline_id,manager_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)",
       [
         p.employeeId,
         p.name,
@@ -63,10 +66,10 @@ export async function POST(request: Request) {
         pinHash,
         true,
         new Date().toISOString(),
-        p.plantId,
+        companyId,p.plantId,
         p.departmentId,
         p.subdepartmentId,
-        p.disciplineId,
+        p.disciplineId,p.managerId,
       ],
     );
     return Response.json({ ok: true }, { status: 201 });

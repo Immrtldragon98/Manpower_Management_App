@@ -45,12 +45,14 @@ type Person = {
   department?: string;
   subdepartment?: string;
   discipline?: string;
+  managerId?: number;
+  managerName?: string;
   companyName?: string;
   companyCode?: string;
 };
 type OrgUnit={id:number;type:"Plant"|"Department"|"Sub-department"|"Discipline";name:string;parentId:number|null};
 type OrgData={company:{id:number;name:string;code:string;timezone:string};units:OrgUnit[]};
-type AdminSession={email:string;name:string;role:"Company Admin"|"Manager"|"Safety Officer";companyId:number|null;scopeType:string;scopeId:number|null};
+type AdminSession={email:string;name:string;role:"Company Admin"|"Manager"|"Supervisor"|"HR"|"Safety Officer";companyId:number|null;scopeType:string;scopeId:number|null;manpowerId:number|null};
 type Job = {
   id: number;
   title: string;
@@ -536,13 +538,13 @@ function JobList({ rows }: { rows: Job[] }) {
     </div>
   );
 }
-type StaffAccount={id:number;name:string;email:string;role:string;scopeType:string;scopeId:number|null;scopeName?:string;active:boolean};
+type StaffAccount={id:number;name:string;username:string;email:string;role:string;scopeType:string;scopeId:number|null;scopeName?:string;active:boolean;manpowerId?:number};
 function TeamAccess({organization}:{organization:OrgData|null}){
  const [accounts,setAccounts]=useState<StaffAccount[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const load=useCallback(()=>fetch("/api/staff").then(async r=>{if(r.ok)setAccounts(await r.json())}),[]);
  useEffect(()=>{load()},[load]);
  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const d=new FormData(e.currentTarget),scopeType=String(d.get("scopeType")),body={...Object.fromEntries(d),scopeId:scopeType==="Company"?null:Number(d.get("scopeId"))};const r=await fetch("/api/staff",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const out=await r.json();if(!r.ok)return setError(out.error);setNotice("Team account created.");e.currentTarget.reset();load()}
- return <section className="panel page"><div className="planner-hero"><div><small>CONTROLLED ACCESS</small><h2>Managers & safety officers</h2><p>Give each person only the workplace scope they are responsible for.</p></div><KeyRound/></div><div className="org-layout"><form className="org-card" onSubmit={submit}><h3>Create account</h3><label className="field"><span>Full name</span><input name="name" required/></label><label className="field"><span>Email</span><input name="email" type="email" required/></label><label className="field"><span>Role</span><select name="role"><option>Manager</option><option>Safety Officer</option></select></label><label className="field"><span>Access level</span><select name="scopeType" defaultValue="Plant"><option>Company</option><option>Plant</option><option>Department</option><option>Sub-department</option><option>Discipline</option></select></label><label className="field"><span>Organization scope</span><select name="scopeId"><option value="">Whole company / choose scope</option>{organization?.units.map(u=><option value={u.id} key={u.id}>{u.type} — {u.name}</option>)}</select></label><label className="field"><span>Temporary password</span><input name="password" type="password" minLength={8} required/></label>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}<button className="primary">Create account</button></form><div className="org-card"><h3>Active accounts</h3><p>Managers handle attendance, leave and work. Safety officers handle passes and training.</p><div className="staff-list">{accounts.map(a=><article key={a.id}><span className="face">{a.name.split(" ").map(x=>x[0]).join("")}</span><div><b>{a.name}</b><small>{a.email}</small><small>{a.role} · {a.scopeName||a.scopeType}</small></div><span className="status ok">Active</span></article>)}{!accounts.length&&<MiniEmpty text="No manager or safety accounts yet."/>}</div></div></div></section>
+ return <section className="panel page"><div className="planner-hero"><div><small>CONTROLLED ACCESS</small><h2>HR, supervisors & managers</h2><p>Create leadership accounts first, then assign every worker to a manager.</p></div><KeyRound/></div><div className="org-layout"><form className="org-card" onSubmit={submit}><h3>Create team account</h3><label className="field"><span>Full name</span><input name="name" required/></label><label className="field"><span>Username</span><input name="username" required/></label><label className="field"><span>Email</span><input name="email" type="email" required/></label><label className="field"><span>Role</span><select name="role"><option>Manager</option><option>Supervisor</option><option>HR</option><option>Safety Officer</option><option>Company Admin</option></select></label><label className="field"><span>Access level</span><select name="scopeType" defaultValue="Company"><option>Company</option><option>Plant</option><option>Department</option><option>Sub-department</option><option>Discipline</option></select></label><label className="field"><span>Organization scope</span><select name="scopeId"><option value="">Whole company / choose scope</option>{organization?.units.map(u=><option value={u.id} key={u.id}>{u.type} — {u.name}</option>)}</select></label><label className="field"><span>Temporary password</span><input name="password" type="password" minLength={8} required/></label><h3>Own worker access (optional)</h3><p>Add both fields so this staff member can request their own attendance, leave and passes.</p><label className="field"><span>Employee ID</span><input name="employeeId"/></label><label className="field"><span>Worker PIN (4–8 digits)</span><input name="workerPin" type="password" inputMode="numeric"/></label><label className="field"><span>Shift</span><select name="shift"><option>G</option><option>A</option><option>B</option><option>C</option></select></label>{error&&<div className="formerror">{error}</div>}{notice&&<div className="request-success">{notice}</div>}<button className="primary">Create account</button></form><div className="org-card"><h3>Active accounts</h3><p>Managers approve their direct reports. Safety officers verify passes.</p><div className="staff-list">{accounts.map(a=><article key={a.id}><span className="face">{a.name.split(" ").map(x=>x[0]).join("")}</span><div><b>{a.name}</b><small>@{a.username} · {a.email}</small><small>{a.role} · {a.scopeName||a.scopeType}{a.manpowerId?" · Self-service enabled":""}</small></div><span className="status ok">Active</span></article>)}{!accounts.length&&<MiniEmpty text="No team accounts yet."/>}</div></div></div></section>
 }
 function OrganizationSetup({data,reload}:{data:OrgData|null;reload:()=>void}){
  const [type,setType]=useState<OrgUnit["type"]>("Plant"),[parentId,setParentId]=useState(""),[name,setName]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState("");
@@ -560,13 +562,14 @@ function OrganizationSetup({data,reload}:{data:OrgData|null;reload:()=>void}){
 }
 function PersonForm({ close, done, organization }: { close: () => void; done: () => void;organization:OrgData|null }) {
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),[managers,setManagers]=useState<StaffAccount[]>([]);
+  useEffect(()=>{fetch("/api/staff").then(async r=>{if(r.ok)setManagers((await r.json()).filter((a:StaffAccount)=>a.role==="Manager"))})},[]);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError("");
     const d = new FormData(e.currentTarget);
-    const body = {...Object.fromEntries(d),plantId:Number(d.get("plantId")),departmentId:Number(d.get("departmentId")),subdepartmentId:Number(d.get("subdepartmentId")),disciplineId:Number(d.get("disciplineId"))};
+    const body = {...Object.fromEntries(d),managerId:Number(d.get("managerId")),plantId:Number(d.get("plantId")),departmentId:Number(d.get("departmentId")),subdepartmentId:Number(d.get("subdepartmentId")),disciplineId:Number(d.get("disciplineId"))};
     const r = await fetch("/api/manpower", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -603,6 +606,7 @@ function PersonForm({ close, done, organization }: { close: () => void; done: ()
       />
       <Select name="shift" label="Shift" values={["A", "B", "C", "G"]} />
       <Field name="phone" label="Phone number" />
+      <label className="field"><span>Assigned manager *</span><select name="managerId" required defaultValue=""><option value="" disabled>Select manager</option>{managers.map(m=><option key={m.id} value={m.id}>{m.name} (@{m.username})</option>)}</select></label>
       <OrgSelects organization={organization}/>
     </Form>
   );

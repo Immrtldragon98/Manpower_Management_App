@@ -46,6 +46,10 @@ export function ensureSchema() {
     CREATE TABLE IF NOT EXISTS audit_logs (id BIGSERIAL PRIMARY KEY, company_id BIGINT REFERENCES companies(id) ON DELETE SET NULL, actor_type TEXT NOT NULL, actor_id TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT, summary TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
     ALTER TABLE manpower ADD COLUMN IF NOT EXISTS must_change_pin BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS username TEXT;
+    ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS manpower_id BIGINT REFERENCES manpower(id) ON DELETE SET NULL;
+    ALTER TABLE manpower ADD COLUMN IF NOT EXISTS manager_id BIGINT REFERENCES staff_accounts(id) ON DELETE SET NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS staff_accounts_company_username_unique ON staff_accounts(company_id,LOWER(username)) WHERE username IS NOT NULL;
   `,
     )
     .then(() => undefined);
